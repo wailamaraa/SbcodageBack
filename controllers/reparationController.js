@@ -187,9 +187,39 @@ const updateReparation = asyncHandler(async (req, res) => {
     res.status(200).json(updatedReparation);
 });
 
+// @desc    Delete a reparation
+// @route   DELETE /api/reparations/:id
+// @access  Private
+const deleteReparation = asyncHandler(async (req, res) => {
+    const reparation = await Reparation.findById(req.params.id)
+        .populate('items.item');
+    
+    if (!reparation) {
+        res.status(404);
+        throw new Error('Reparation not found');
+    }
+
+    // Return items to stock
+    for (const itemData of reparation.items) {
+        const item = itemData.item;
+        if (item) {
+            await Item.findByIdAndUpdate(
+                item._id,
+                { $inc: { quantity: itemData.quantity } },
+                { new: true, runValidators: true }
+            );
+        }
+    }
+    
+    await reparation.deleteOne();
+    
+    res.status(200).json({ message: 'Reparation removed and items returned to stock' });
+});
+
 module.exports = {
     createReparation,
     getReparations,
     getReparation,
-    updateReparation
+    updateReparation,
+    deleteReparation
 }; 

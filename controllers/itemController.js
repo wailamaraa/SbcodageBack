@@ -30,8 +30,8 @@ exports.getItems = async (req, res) => {
 
         // Pagination
         const page = parseInt(req.query.page, 10) || 1;
-        const limit = parseInt(req.query.limit, 10) || 10;
-        const skip = (page - 1) * limit;
+        const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+        const skip = limit ? (page - 1) * limit : 0;
 
         // Sorting
         let sort = { createdAt: -1 };
@@ -53,8 +53,8 @@ exports.getItems = async (req, res) => {
             success: true,
             count: items.length,
             total,
-            page,
-            pages: Math.ceil(total / limit),
+            page: limit ? page : 1,
+            pages: limit ? Math.ceil(total / limit) : 1,
             data: items,
         });
     } catch (error) {

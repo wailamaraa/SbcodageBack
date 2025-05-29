@@ -4,7 +4,8 @@ const {
     createReparation,
     getReparations,
     getReparation,
-    updateReparation
+    updateReparation,
+    deleteReparation
 } = require('../controllers/reparationController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -14,6 +15,7 @@ router.route('/')
 
 router.route('/:id')
     .get(protect, getReparation)
-    .put(protect, updateReparation);
+    .put(protect, updateReparation)
+    .delete(protect, deleteReparation);
 
 module.exports = router; 

@@ -64,12 +64,12 @@ const getServices = asyncHandler(async (req, res) => {
 // @access  Private
 const getService = asyncHandler(async (req, res) => {
     const service = await Service.findById(req.params.id);
-    
+
     if (!service) {
         res.status(404);
         throw new Error('Service not found');
     }
-    
+
     res.status(200).json(service);
 });
 
@@ -78,17 +78,17 @@ const getService = asyncHandler(async (req, res) => {
 // @access  Private
 const updateService = asyncHandler(async (req, res) => {
     const service = await Service.findById(req.params.id);
-    
+
     if (!service) {
         res.status(404);
         throw new Error('Service not found');
     }
-    
+
     const updatedService = await Service.findByIdAndUpdate(req.params.id, req.body, {
         new: true,
         runValidators: true
     });
-    
+
     res.status(200).json(updatedService);
 });
 
@@ -97,14 +97,14 @@ const updateService = asyncHandler(async (req, res) => {
 // @access  Private
 const deleteService = asyncHandler(async (req, res) => {
     const service = await Service.findById(req.params.id);
-    
+
     if (!service) {
         res.status(404);
         throw new Error('Service not found');
     }
-    
-    await service.remove();
-    
+
+    await service.deleteOne();
+
     res.status(200).json({ message: 'Service removed' });
 });
 
