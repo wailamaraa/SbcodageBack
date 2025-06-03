@@ -5,6 +5,7 @@ const {
     getReparations,
     getReparation,
     updateReparation,
+    updateReparationFull,
     deleteReparation
 } = require('../controllers/reparationController');
 const { protect } = require('../middleware/authMiddleware');
@@ -17,5 +18,8 @@ router.route('/:id')
     .get(protect, getReparation)
     .put(protect, updateReparation)
     .delete(protect, deleteReparation);
+
+router.route('/:id/full')
+    .put(protect, updateReparationFull);
 
 module.exports = router; 

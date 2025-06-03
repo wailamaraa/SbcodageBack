@@ -26,13 +26,13 @@ const createReparation = asyncHandler(async (req, res) => {
                 res.status(404);
                 throw new Error(`Item with ID ${itemData.item} not found`);
             }
-            
+
             // Check if enough stock is available
             if (item.quantity < itemData.quantity) {
                 res.status(400);
                 throw new Error(`Not enough stock for ${item.name}. Available: ${item.quantity}`);
             }
-            
+
             preparedItems.push({
                 item: item._id,
                 quantity: itemData.quantity,
@@ -50,7 +50,7 @@ const createReparation = asyncHandler(async (req, res) => {
                 res.status(404);
                 throw new Error(`Service with ID ${serviceData.service} not found`);
             }
-            
+
             preparedServices.push({
                 service: service._id,
                 price: service.price,
@@ -153,38 +153,148 @@ const getReparation = asyncHandler(async (req, res) => {
             model: 'Service'
         })
         .populate('createdBy', 'name');
-    
+
     if (!reparation) {
         res.status(404);
         throw new Error('Reparation not found');
     }
-    
+
     res.status(200).json(reparation);
 });
 
-// @desc    Update reparation status
+// @desc    Update reparation
 // @route   PUT /api/reparations/:id
 // @access  Private
 const updateReparation = asyncHandler(async (req, res) => {
     const { status, endDate } = req.body;
-    
+
     const reparation = await Reparation.findById(req.params.id);
-    
+
     if (!reparation) {
         res.status(404);
         throw new Error('Reparation not found');
     }
-    
+
     // Update status and end date if provided
     reparation.status = status || reparation.status;
-    
+
     if (status === 'completed' && !reparation.endDate) {
         reparation.endDate = endDate || new Date();
     }
-    
+
     const updatedReparation = await reparation.save();
-    
+
     res.status(200).json(updatedReparation);
+});
+
+// @desc    Update all reparation information
+// @route   PUT /api/reparations/:id/full
+// @access  Private
+const updateReparationFull = asyncHandler(async (req, res) => {
+    const { description, items, services, technician, laborCost, status, notes } = req.body;
+
+    const reparation = await Reparation.findById(req.params.id)
+        .populate('items.item');
+
+    if (!reparation) {
+        res.status(404);
+        throw new Error('Reparation not found');
+    }
+
+    // Handle items update
+    if (items && items.length > 0) {
+        // First, return all existing items to stock
+        for (const itemData of reparation.items) {
+            const item = itemData.item;
+            if (item) {
+                await Item.findByIdAndUpdate(
+                    item._id,
+                    { $inc: { quantity: itemData.quantity } },
+                    { new: true, runValidators: true }
+                );
+            }
+        }
+
+        // Validate and prepare new items
+        let preparedItems = [];
+        for (const itemData of items) {
+            const item = await Item.findById(itemData.item);
+            if (!item) {
+                res.status(404);
+                throw new Error(`Item with ID ${itemData.item} not found`);
+            }
+
+            // Check if enough stock is available
+            if (item.quantity < itemData.quantity) {
+                res.status(400);
+                throw new Error(`Not enough stock for ${item.name}. Available: ${item.quantity}`);
+            }
+
+            preparedItems.push({
+                item: item._id,
+                quantity: itemData.quantity,
+                price: item.price
+            });
+
+            // Update stock levels
+            await Item.findByIdAndUpdate(
+                itemData.item,
+                { $inc: { quantity: -itemData.quantity } },
+                { new: true, runValidators: true }
+            );
+        }
+        reparation.items = preparedItems;
+    }
+
+    // Handle services update
+    if (services && services.length > 0) {
+        let preparedServices = [];
+        for (const serviceData of services) {
+            const service = await Service.findById(serviceData.service);
+            if (!service) {
+                res.status(404);
+                throw new Error(`Service with ID ${serviceData.service} not found`);
+            }
+
+            preparedServices.push({
+                service: service._id,
+                price: service.price,
+                notes: serviceData.notes || ''
+            });
+        }
+        reparation.services = preparedServices;
+    }
+
+    // Update other fields if provided
+    if (description) reparation.description = description;
+    if (technician) reparation.technician = technician;
+    if (laborCost !== undefined) reparation.laborCost = laborCost;
+    if (notes) reparation.notes = notes;
+
+    // Handle status update
+    if (status) {
+        reparation.status = status;
+        if (status === 'completed' && !reparation.endDate) {
+            reparation.endDate = new Date();
+        }
+    }
+
+    const updatedReparation = await reparation.save();
+
+    // Populate the response with related data
+    const populatedReparation = await Reparation.findById(updatedReparation._id)
+        .populate('car')
+        .populate({
+            path: 'items.item',
+            model: 'Item'
+        })
+        .populate({
+            path: 'services.service',
+            model: 'Service'
+        })
+        .populate('createdBy', 'name');
+
+    res.status(200).json(populatedReparation);
 });
 
 // @desc    Delete a reparation
@@ -193,7 +303,7 @@ const updateReparation = asyncHandler(async (req, res) => {
 const deleteReparation = asyncHandler(async (req, res) => {
     const reparation = await Reparation.findById(req.params.id)
         .populate('items.item');
-    
+
     if (!reparation) {
         res.status(404);
         throw new Error('Reparation not found');
@@ -210,9 +320,9 @@ const deleteReparation = asyncHandler(async (req, res) => {
             );
         }
     }
-    
+
     await reparation.deleteOne();
-    
+
     res.status(200).json({ message: 'Reparation removed and items returned to stock' });
 });
 
@@ -221,5 +331,6 @@ module.exports = {
     getReparations,
     getReparation,
     updateReparation,
+    updateReparationFull,
     deleteReparation
 }; 
