@@ -33,6 +33,7 @@ const carRoutes = require('./routes/cars');
 const reparationRoutes = require('./routes/reparations');
 const serviceRoutes = require('./routes/services');
 const dashboardRoutes = require('./routes/dashboard');
+const stockTransactionRoutes = require('./routes/stockTransactions');
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -44,6 +45,7 @@ app.use('/api/cars', carRoutes);
 app.use('/api/reparations', reparationRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/stock-transactions', stockTransactionRoutes);
 
 // Default route
 app.get('/', (req, res) => {
