@@ -24,7 +24,7 @@ exports.getDashboardStats = async (req, res) => {
         // Get inventory value
         const items = await Item.find();
         const inventoryValue = items.reduce((total, item) => {
-            return total + (item.price * item.quantity);
+            return total + ((item.buyPrice || 0) * (item.quantity || 0));
         }, 0);
 
         // Get low stock items

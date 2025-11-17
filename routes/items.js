@@ -6,7 +6,9 @@ const {
     createItem,
     updateItem,
     deleteItem,
-    updateItemQuantity
+    updateItemQuantity,
+    getItemHistory,
+    getLowStockItems
 } = require('../controllers/itemController');
 const { protect, authorize } = require('../middleware/auth');
 const { validate } = require('../middleware/validator');
@@ -16,6 +18,9 @@ const router = express.Router();
 // Apply protection to all routes
 router.use(protect);
 
+// Low stock items route (must come before /:id)
+router.get('/low-stock', getLowStockItems);
+
 // Get all items and create a new item
 router
     .route('/')
@@ -23,7 +28,8 @@ router
     .post(
         [
             body('name').notEmpty().withMessage('Item name is required'),
-            body('price').isNumeric().withMessage('Price must be a number'),
+            body('buyPrice').isNumeric().withMessage('Buy price must be a number'),
+            body('sellPrice').isNumeric().withMessage('Sell price must be a number'),
             body('quantity').isNumeric().withMessage('Quantity must be a number'),
             body('category').notEmpty().withMessage('Category is required'),
             body('fournisseur').notEmpty().withMessage('Supplier is required'),
@@ -40,7 +46,8 @@ router
     .put(
         [
             body('name').optional().notEmpty().withMessage('Item name cannot be empty'),
-            body('price').optional().isNumeric().withMessage('Price must be a number'),
+            body('buyPrice').optional().isNumeric().withMessage('Buy price must be a number'),
+            body('sellPrice').optional().isNumeric().withMessage('Sell price must be a number'),
             body('quantity').optional().isNumeric().withMessage('Quantity must be a number'),
         ],
         validate,
@@ -48,6 +55,9 @@ router
         updateItem
     )
     .delete(authorize('admin'), deleteItem);
+
+// Get item stock history
+router.get('/:id/history', getItemHistory);
 
 // Update item quantity
 router.put(

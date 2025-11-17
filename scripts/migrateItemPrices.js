@@ -16,7 +16,8 @@ require('dotenv').config();
 // Connect to MongoDB
 const connectDB = async () => {
     try {
-        await mongoose.connect(process.env.MONGO_URI);
+        const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
+        await mongoose.connect(uri);
         console.log('MongoDB Connected...');
     } catch (err) {
         console.error('MongoDB connection error:', err.message);
@@ -51,9 +52,8 @@ const migrateItems = async () => {
 
             // If item has old 'price' field
             if (item.price) {
-                const sellPrice = item.price;
-                // Set buyPrice to 70% of sellPrice (adjust this ratio as needed)
-                const buyPrice = Math.round(sellPrice * 0.7 * 100) / 100;
+                const buyPrice = item.price;
+                const sellPrice = Math.round(buyPrice * 1.5 * 100) / 100;
 
                 await OldItem.updateOne(
                     { _id: item._id },

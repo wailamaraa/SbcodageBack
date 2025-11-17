@@ -16,9 +16,15 @@ const itemSchema = new mongoose.Schema(
             required: [true, 'Please add quantity'],
             default: 0,
         },
-        price: {
+        buyPrice: {
             type: Number,
-            required: [true, 'Please add a price'],
+            required: [true, 'Please add a buy price'],
+            description: 'Price at which we purchase this item from supplier',
+        },
+        sellPrice: {
+            type: Number,
+            required: [true, 'Please add a sell price'],
+            description: 'Price at which we charge the client in reparations',
         },
         category: {
             type: mongoose.Schema.Types.ObjectId,
@@ -32,7 +38,7 @@ const itemSchema = new mongoose.Schema(
         },
         status: {
             type: String,
-            enum: ['available', 'low_stock', 'out_of_stock', 'used'],
+            enum: ['available', 'low_stock', 'out_of_stock'],
             default: 'available',
         },
         threshold: {
@@ -60,6 +66,20 @@ const itemSchema = new mongoose.Schema(
         toObject: { virtuals: true },
     }
 );
+
+itemSchema.virtual('profitMargin').get(function() {
+    if (this.buyPrice && this.sellPrice) {
+        return this.sellPrice - this.buyPrice;
+    }
+    return 0;
+});
+
+itemSchema.virtual('profitMarginPercent').get(function() {
+    if (this.buyPrice && this.sellPrice && this.buyPrice > 0) {
+        return ((this.sellPrice - this.buyPrice) / this.buyPrice * 100).toFixed(2);
+    }
+    return 0;
+});
 
 // Create item code before saving (if not provided)
 itemSchema.pre('save', async function (next) {

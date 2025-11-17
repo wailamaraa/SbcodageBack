@@ -39,8 +39,17 @@ const reparationSchema = new mongoose.Schema(
                     required: true,
                     default: 1,
                 },
-                price: {
+                buyPrice: {
                     type: Number,
+                    description: 'Buy price at time of use',
+                },
+                sellPrice: {
+                    type: Number,
+                    description: 'Sell price charged to client',
+                },
+                totalPrice: {
+                    type: Number,
+                    description: 'Total price for this item (sellPrice * quantity)',
                 },
             },
         ],
@@ -75,6 +84,11 @@ const reparationSchema = new mongoose.Schema(
             type: Number,
             default: 0,
         },
+        totalProfit: {
+            type: Number,
+            default: 0,
+            description: 'Total profit from parts (sum of (sellPrice - buyPrice) * quantity)',
+        },
         notes: {
             type: String,
             trim: true,
@@ -89,14 +103,21 @@ const reparationSchema = new mongoose.Schema(
     }
 );
 
-// Calculate total cost from parts, services, and labor
+// Calculate total cost and profit from parts, services, and labor
 reparationSchema.pre('save', async function (next) {
     let partsCost = 0;
+    let totalProfit = 0;
     let servicesCost = 0;
 
     if (this.items && this.items.length > 0) {
         this.items.forEach(item => {
-            partsCost += (item.price || 0) * item.quantity;
+            const itemTotal = (item.sellPrice || 0) * item.quantity;
+            item.totalPrice = itemTotal;
+            partsCost += itemTotal;
+
+            if (item.buyPrice && item.sellPrice) {
+                totalProfit += (item.sellPrice - item.buyPrice) * item.quantity;
+            }
         });
     }
 
@@ -108,6 +129,7 @@ reparationSchema.pre('save', async function (next) {
 
     this.partsCost = partsCost;
     this.servicesCost = servicesCost;
+    this.totalProfit = totalProfit;
     this.totalCost = partsCost + servicesCost + (this.laborCost || 0);
     next();
 });

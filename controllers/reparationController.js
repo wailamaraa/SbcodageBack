@@ -3,6 +3,7 @@ const Reparation = require('../models/Reparation');
 const Car = require('../models/Car');
 const Item = require('../models/Item');
 const Service = require('../models/Service');
+const StockTransaction = require('../models/StockTransaction');
 
 // @desc    Create a new reparation
 // @route   POST /api/reparations
@@ -17,7 +18,7 @@ const createReparation = asyncHandler(async (req, res) => {
         throw new Error('Car not found');
     }
 
-    // Validate and prepare items with current price
+    // Validate and prepare items with current prices
     let preparedItems = [];
     if (items && items.length > 0) {
         for (const itemData of items) {
@@ -36,7 +37,9 @@ const createReparation = asyncHandler(async (req, res) => {
             preparedItems.push({
                 item: item._id,
                 quantity: itemData.quantity,
-                price: item.price
+                buyPrice: item.buyPrice,
+                sellPrice: item.sellPrice,
+                totalPrice: item.sellPrice * itemData.quantity
             });
         }
     }
@@ -73,14 +76,33 @@ const createReparation = asyncHandler(async (req, res) => {
         startDate: new Date()
     });
 
-    // Update stock levels for used items
+    // Update stock levels for used items and create stock transactions
     if (items && items.length > 0) {
         for (const itemData of items) {
-            await Item.findByIdAndUpdate(
-                itemData.item,
-                { $inc: { quantity: -itemData.quantity } },
-                { new: true, runValidators: true }
-            );
+            const usedItem = await Item.findById(itemData.item);
+            if (usedItem) {
+                const oldQuantity = usedItem.quantity;
+                const newQuantity = oldQuantity - itemData.quantity;
+
+                await Item.findByIdAndUpdate(
+                    itemData.item,
+                    { $inc: { quantity: -itemData.quantity } },
+                    { new: true, runValidators: true }
+                );
+
+                await StockTransaction.create({
+                    item: itemData.item,
+                    type: 'reparation_use',
+                    quantity: itemData.quantity,
+                    quantityBefore: oldQuantity,
+                    quantityAfter: newQuantity,
+                    unitPrice: usedItem.sellPrice,
+                    totalAmount: usedItem.sellPrice * itemData.quantity,
+                    reparation: reparation._id,
+                    notes: `Used in reparation`,
+                    createdBy: req.user._id,
+                });
+            }
         }
     }
 
@@ -203,15 +225,31 @@ const updateReparationFull = asyncHandler(async (req, res) => {
 
     // Handle items update
     if (items && items.length > 0) {
-        // First, return all existing items to stock
+        // First, return all existing items to stock with transactions
         for (const itemData of reparation.items) {
             const item = itemData.item;
             if (item) {
+                const oldQuantity = item.quantity;
+                const newQuantity = oldQuantity + itemData.quantity;
+
                 await Item.findByIdAndUpdate(
                     item._id,
                     { $inc: { quantity: itemData.quantity } },
                     { new: true, runValidators: true }
                 );
+
+                await StockTransaction.create({
+                    item: item._id,
+                    type: 'reparation_return',
+                    quantity: itemData.quantity,
+                    quantityBefore: oldQuantity,
+                    quantityAfter: newQuantity,
+                    unitPrice: itemData.sellPrice,
+                    totalAmount: (itemData.sellPrice || 0) * itemData.quantity,
+                    reparation: reparation._id,
+                    notes: 'Returned due to reparation update',
+                    createdBy: req.user._id,
+                });
             }
         }
 
@@ -233,15 +271,33 @@ const updateReparationFull = asyncHandler(async (req, res) => {
             preparedItems.push({
                 item: item._id,
                 quantity: itemData.quantity,
-                price: item.price
+                buyPrice: item.buyPrice,
+                sellPrice: item.sellPrice,
+                totalPrice: item.sellPrice * itemData.quantity
             });
 
-            // Update stock levels
+            // Update stock levels and create use transaction
+            const oldQuantity = item.quantity;
+            const newQuantity = oldQuantity - itemData.quantity;
+
             await Item.findByIdAndUpdate(
                 itemData.item,
                 { $inc: { quantity: -itemData.quantity } },
                 { new: true, runValidators: true }
             );
+
+            await StockTransaction.create({
+                item: itemData.item,
+                type: 'reparation_use',
+                quantity: itemData.quantity,
+                quantityBefore: oldQuantity,
+                quantityAfter: newQuantity,
+                unitPrice: item.sellPrice,
+                totalAmount: item.sellPrice * itemData.quantity,
+                reparation: reparation._id,
+                notes: 'Used in updated reparation',
+                createdBy: req.user._id,
+            });
         }
         reparation.items = preparedItems;
     }
@@ -313,11 +369,27 @@ const deleteReparation = asyncHandler(async (req, res) => {
     for (const itemData of reparation.items) {
         const item = itemData.item;
         if (item) {
+            const oldQuantity = item.quantity;
+            const newQuantity = oldQuantity + itemData.quantity;
+
             await Item.findByIdAndUpdate(
                 item._id,
                 { $inc: { quantity: itemData.quantity } },
                 { new: true, runValidators: true }
             );
+
+            await StockTransaction.create({
+                item: item._id,
+                type: 'reparation_return',
+                quantity: itemData.quantity,
+                quantityBefore: oldQuantity,
+                quantityAfter: newQuantity,
+                unitPrice: itemData.sellPrice,
+                totalAmount: (itemData.sellPrice || 0) * itemData.quantity,
+                reparation: reparation._id,
+                notes: 'Returned due to reparation deletion',
+                createdBy: req.user?._id,
+            });
         }
     }
 
