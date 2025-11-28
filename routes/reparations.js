@@ -4,6 +4,7 @@ const {
     createReparation,
     getReparations,
     getReparation,
+    downloadReparationInvoice,
     updateReparation,
     updateReparationFull,
     deleteReparation
@@ -19,7 +20,10 @@ router.route('/:id')
     .put(protect, updateReparation)
     .delete(protect, deleteReparation);
 
+router.route('/:id/invoice')
+    .get(protect, downloadReparationInvoice);
+
 router.route('/:id/full')
     .put(protect, updateReparationFull);
 
-module.exports = router; 
+module.exports = router;
