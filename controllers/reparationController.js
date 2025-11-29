@@ -1,11 +1,12 @@
 const asyncHandler = require('express-async-handler');
+const path = require('path');
+const fs = require('fs');
+const { jsPDF } = require('jspdf');
 const Reparation = require('../models/Reparation');
 const Car = require('../models/Car');
 const Item = require('../models/Item');
 const Service = require('../models/Service');
 const StockTransaction = require('../models/StockTransaction');
-const path = require('path');
-const fs = require('fs');
 
 const DEFAULT_COMPANY_INFO = {
   name: 'SbCodage AUTO',
@@ -38,166 +39,6 @@ const formatMAD = (value) => {
     const n = Number(value || 0).toFixed(2);
     return `${n} MAD`;
   }
-};
-
-const buildInvoiceHTML = ({ company, reparation, logoDataUri, items, services, totals }) => {
-  const invoiceDate = reparation.startDate ? new Date(reparation.startDate) : new Date();
-  const dueDate = reparation.endDate ? new Date(reparation.endDate) : invoiceDate;
-  const customerName = reparation?.car?.owner?.name || '';
-  const customerAddress = reparation?.car ? `${reparation.car.make || ''} ${reparation.car.model || ''} ${reparation.car.year || ''}`.trim() : '';
-  const customerPhone = reparation?.car?.owner?.phone || '';
-
-  const rowsHTML = [
-    ...services.map((s) => `
-      <tr class="row">
-        <td class="desc">
-          <div class="title">${s.name}</div>
-          ${s.notes ? `<div class="sub">${s.notes}</div>` : ''}
-        </td>
-        <td class="qty">1</td>
-        <td class="rate">${formatMAD(s.price)}</td>
-        <td class="amount">${formatMAD(s.price)}</td>
-      </tr>
-    `),
-    // Items
-    ...items.map((it) => `
-      <tr class="row">
-        <td class="desc">
-          <div class="title">${it.name}</div>
-          ${it.description ? `<div class="sub">${it.description}</div>` : ''}
-        </td>
-        <td class="qty">${it.quantity}</td>
-        <td class="rate">${formatMAD(it.rate)}</td>
-        <td class="amount">${formatMAD(it.total)}</td>
-      </tr>
-    `)
-  ].join('');
-
-  return `<!DOCTYPE html>
-  <html lang="fr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Facture</title>
-    <style>
-      @page { size: A4; margin: 12mm; }
-      :root { --text:#0f172a; --muted:#64748b; --border:#e2e8f0; --bg:#f8fafc; --accent:#2563eb; }
-      * { box-sizing: border-box; }
-      html, body { margin:0; padding:0; font-family: ui-sans-serif, -apple-system, Segoe UI, Roboto, Arial, 'Noto Sans', 'Helvetica Neue', 'Apple Color Emoji', 'Segoe UI Emoji'; color:var(--text); }
-      body { background: var(--bg); }
-      .page { width: 190mm; margin: 0 auto; background: white; border-radius: 10px; border:1px solid var(--border); }
-      header { position: fixed; top: 12mm; left: 0; right: 0; width: 190mm; margin: 0 auto; padding: 0 10mm; }
-      footer { position: fixed; bottom: 12mm; left: 0; right: 0; width: 190mm; margin: 0 auto; padding: 0 10mm; }
-      .header-inner, .footer-inner { display:flex; align-items:center; justify-content:space-between; }
-      .brand { display:flex; gap:12px; align-items:flex-start; }
-      .brand .info { line-height:1.3; }
-      .brand .name { font-weight:700; font-size:18px; }
-      .brand .muted { color: var(--muted); font-size:12px; }
-      .logo { width: 140px; height: auto; object-fit: contain; }
-
-      .content-wrap { padding: 0 10mm; }
-      .content { margin-top: 42mm; margin-bottom: 36mm; transform-origin: top left; }
-      .topbar { display:flex; justify-content:space-between; gap: 10mm; margin-bottom: 8mm; }
-      .billto { font-size: 12px; }
-      .billto .label { color: var(--muted); }
-      .billto .value { font-weight:600; margin-top: 2mm; }
-      .amount-box { text-align:right; }
-      .amount-box .label { color: var(--muted); font-size:12px; }
-      .amount-box .value { font-size: 24px; font-weight:800; color: var(--text); }
-      .meta { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 6mm; margin-bottom: 8mm; }
-      .meta .item { font-size: 12px; }
-      .meta .label { color: var(--muted); }
-      .meta .value { font-weight:600; }
-
-      .table { width: 100%; border-collapse: collapse; border: 1px solid var(--border); border-radius:8px; overflow:hidden; }
-      .table thead th { background:#f1f5f9; text-align:left; font-size:11px; color:#334155; padding: 8px 10px; }
-      .table tbody td { border-top:1px solid var(--border); padding: 10px; font-size: 12px; vertical-align: top; }
-      .table .desc .title { font-weight:700; }
-      .table .desc .sub { color: var(--muted); font-size: 11px; margin-top: 2px; }
-      .table .qty, .table .rate, .table .amount { text-align:right; white-space:nowrap; }
-
-      .totals { display:flex; justify-content:flex-end; margin-top: 6mm; }
-      .totals .box { width: 80mm; }
-      .totals .row { display:flex; justify-content:space-between; font-size: 12px; padding: 4px 0; }
-      .totals .row.total { font-weight:800; font-size: 14px; border-top:1px solid var(--border); padding-top: 6px; }
-
-      .thanks { margin-top: 8mm; font-size: 12px; }
-      .terms { margin-top: 4mm; color: var(--muted); font-size: 11px; }
-    </style>
-  </head>
-  <body>
-    <div class="page">
-      <header>
-        <div class="header-inner">
-          <div class="brand">
-            <div class="info">
-              <div class="name">${company.name}</div>
-              <div class="muted">${company.address}</div>
-              <div class="muted">${company.email}</div>
-              <div class="muted">${company.phone}</div>
-            </div>
-          </div>
-          <img class="logo" src="${logoDataUri}" alt="Logo" />
-        </div>
-      </header>
-
-      <footer>
-        <div class="footer-inner">
-          <div class="muted">Patente: ${company.patente} · Instagram: ${company.instagram}</div>
-        </div>
-      </footer>
-
-      <div class="content-wrap">
-        <div id="content" class="content">
-          <div class="topbar">
-            <div class="billto">
-              <div class="label">Facturé à,</div>
-              <div class="value">${customerName}</div>
-              <div class="muted">${customerAddress}</div>
-              ${customerPhone ? `<div class="muted">${customerPhone}</div>` : ''}
-            </div>
-            <div class="amount-box">
-              <div class="label">Montant (MAD)</div>
-              <div class="value">${formatMAD(totals.total)}</div>
-            </div>
-          </div>
-
-          <div class="meta">
-            <div class="item"><div class="label">Objet</div><div class="value">${reparation.description || ''}</div></div>
-            <div class="item"><div class="label">Date de la facture</div><div class="value">${invoiceDate.toLocaleDateString('fr-MA')}</div></div>
-            <div class="item"><div class="label">Date d'échéance</div><div class="value">${dueDate.toLocaleDateString('fr-MA')}</div></div>
-            <div class="item"><div class="label">Référence</div><div class="value">#${String(reparation._id).slice(-8).toUpperCase()}</div></div>
-          </div>
-
-          <table class="table">
-            <thead>
-              <tr>
-                <th style="width:60%">DÉTAIL DE L'ARTICLE</th>
-                <th style="width:10%; text-align:right;">QTY</th>
-                <th style="width:15%; text-align:right;">TAUX</th>
-                <th style="width:15%; text-align:right;">MONTANT</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHTML}
-            </tbody>
-          </table>
-
-          <div class="totals">
-            <div class="box">
-              <div class="row"><div>Sous-total</div><div>${formatMAD(totals.subtotal)}</div></div>
-              <div class="row"><div>Main d'œuvre</div><div>${formatMAD(totals.labor)}</div></div>
-              <div class="row total"><div>Total</div><div>${formatMAD(totals.total)}</div></div>
-            </div>
-          </div>
-
-          <div class="thanks">Merci pour votre confiance.</div>
-          <div class="terms">Conditions générales · Veuillez payer dès réception de cette facture.</div>
-        </div>
-      </div>
-    </div>
-  </body>
-  </html>`;
 };
 
 // @desc    Create a new reparation
@@ -377,90 +218,6 @@ const getReparation = asyncHandler(async (req, res) => {
     }
 
     res.status(200).json(reparation);
-});
-
-const downloadReparationInvoice = asyncHandler(async (req, res) => {
-    const puppeteer = require('puppeteer');
-    const reparation = await Reparation.findById(req.params.id)
-        .populate('car')
-        .populate({ path: 'items.item', model: 'Item' })
-        .populate({ path: 'services.service', model: 'Service' });
-
-    if (!reparation) {
-        res.status(404);
-        throw new Error('Reparation not found');
-    }
-
-    const items = (reparation.items || []).map((ri) => {
-        const rate = (ri.sellPrice != null) ? ri.sellPrice : (ri.item?.sellPrice || 0);
-        const qty = ri.quantity || 1;
-        return {
-            name: ri.item?.name || 'Article',
-            description: ri.item?.description || '',
-            quantity: qty,
-            rate,
-            total: rate * qty,
-        };
-    });
-
-    const services = (reparation.services || []).map((rs) => {
-        const price = (rs.price != null) ? rs.price : (rs.service?.price || 0);
-        return {
-            name: rs.service?.name || 'Service',
-            notes: rs.notes || (rs.service?.description || ''),
-            price,
-        };
-    });
-
-    const subtotal = items.reduce((s, it) => s + (it.total || 0), 0) + services.reduce((s, sv) => s + (sv.price || 0), 0);
-    const labor = Number(reparation.laborCost || 0);
-    const totals = { subtotal, labor, total: subtotal + labor };
-
-    const logoDataUri = loadLogoDataUri();
-    const html = buildInvoiceHTML({
-        company: DEFAULT_COMPANY_INFO,
-        reparation,
-        logoDataUri,
-        items,
-        services,
-        totals,
-    });
-
-    let browser;
-    try {
-        browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-        const page = await browser.newPage();
-        await page.setContent(html, { waitUntil: 'load' });
-
-        await page.evaluate(() => {
-            const el = document.getElementById('content');
-            if (!el) return;
-            const mmToPx = (mm) => mm * 3.78;
-            const allowed = mmToPx(297 - 24 - 42 - 36);
-            const h = el.scrollHeight;
-            if (h > allowed) {
-                const scale = Math.min(1, allowed / h);
-                el.style.transform = `scale(${scale})`;
-            }
-        });
-
-        const pdfBuffer = await page.pdf({
-            format: 'A4',
-            printBackground: true,
-            margin: { top: '0mm', right: '0mm', bottom: '0mm', left: '0mm' },
-        });
-
-        const filename = `facture_${String(reparation._id).slice(-8).toUpperCase()}.pdf`;
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.send(pdfBuffer);
-    } catch (err) {
-        if (browser) { try { await browser.close(); } catch (_) {} }
-        res.status(500);
-        throw new Error('Failed to generate invoice PDF');
-    } finally {
-        if (browser) { try { await browser.close(); } catch (_) {} }
-    }
 });
 
 // @desc    Update reparation
@@ -675,6 +432,241 @@ const deleteReparation = asyncHandler(async (req, res) => {
     await reparation.deleteOne();
 
     res.status(200).json({ message: 'Reparation removed and items returned to stock' });
+});
+
+// @desc    Download reparation invoice as PDF
+// @route   GET /api/reparations/:id/invoice
+// @access  Private
+const downloadReparationInvoice = asyncHandler(async (req, res) => {
+    const reparation = await Reparation.findById(req.params.id)
+        .populate('car')
+        .populate({ path: 'items.item', model: 'Item' })
+        .populate({ path: 'services.service', model: 'Service' });
+
+    if (!reparation) {
+        res.status(404);
+        throw new Error('Reparation not found');
+    }
+
+    const items = (reparation.items || []).map((ri) => {
+        const rate = (ri.sellPrice != null) ? ri.sellPrice : (ri.item?.sellPrice || 0);
+        const qty = ri.quantity || 1;
+        return {
+            name: ri.item?.name || 'Article',
+            description: ri.item?.description || '',
+            quantity: qty,
+            rate,
+            total: rate * qty,
+        };
+    });
+
+    const services = (reparation.services || []).map((rs) => {
+        const price = (rs.price != null) ? rs.price : (rs.service?.price || 0);
+        return {
+            name: rs.service?.name || 'Service',
+            notes: rs.notes || (rs.service?.description || ''),
+            price,
+        };
+    });
+
+    const subtotal = items.reduce((s, it) => s + (it.total || 0), 0) + services.reduce((s, sv) => s + (sv.price || 0), 0);
+    const labor = Number(reparation.laborCost || 0);
+    const totals = { subtotal, labor, total: subtotal + labor };
+
+    const company = DEFAULT_COMPANY_INFO;
+    const logoDataUri = loadLogoDataUri();
+
+    // jsPDF in mm units on A4
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginX = 10;
+    const marginBottom = 12;
+    let y = 15;
+
+    // Header: logo + company info
+    if (logoDataUri) {
+        try {
+            doc.addImage(logoDataUri, 'PNG', pageWidth - marginX - 40, y - 5, 40, 20);
+        } catch (_) {}
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text(company.name, marginX, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    y += 5;
+    doc.text(company.address, marginX, y);
+    y += 4;
+    doc.text(company.email, marginX, y);
+    y += 4;
+    doc.text(company.phone, marginX, y);
+
+    // Invoice meta & customer block
+    const invoiceDate = reparation.startDate ? new Date(reparation.startDate) : new Date();
+    const dueDate = reparation.endDate ? new Date(reparation.endDate) : invoiceDate;
+    const customerName = reparation?.car?.owner?.name || '';
+    const customerAddress = reparation?.car
+        ? `${reparation.car.make || ''} ${reparation.car.model || ''} ${reparation.car.year || ''}`.trim()
+        : '';
+    const customerPhone = reparation?.car?.owner?.phone || '';
+
+    // Space between header and owner block
+    y = 45;
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Facturé à,', marginX, y);
+    doc.setFont('helvetica', 'bold');
+    doc.text(customerName, marginX, y + 5);
+    doc.setFont('helvetica', 'normal');
+    if (customerAddress) doc.text(customerAddress, marginX, y + 10);
+    if (customerPhone) doc.text(customerPhone, marginX, y + 15);
+
+    // Amount box on the right
+    const rightX = pageWidth - marginX;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Montant (MAD)', rightX, y, { align: 'right' });
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(formatMAD(totals.total), rightX, y + 7, { align: 'right' });
+
+    // Meta info row
+    // Extra space between owner block and meta section
+    y += 26;
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+
+    const colW = (pageWidth - 2 * marginX) / 3;
+    const metaY = y;
+
+    doc.text('Objet', marginX, metaY);
+    doc.setFont('helvetica', 'bold');
+    doc.text(reparation.description || '', marginX, metaY + 4);
+
+    doc.setFont('helvetica', 'normal');
+    doc.text('Date de la facture', marginX + colW, metaY);
+    doc.setFont('helvetica', 'bold');
+    doc.text(invoiceDate.toLocaleDateString('fr-MA'), marginX + colW, metaY + 4);
+
+    doc.setFont('helvetica', 'normal');
+    doc.text("Date d'échéance", marginX + colW * 2, metaY);
+    doc.setFont('helvetica', 'bold');
+    doc.text(dueDate.toLocaleDateString('fr-MA'), marginX + colW * 2, metaY + 4);
+
+    y = metaY + 10;
+    doc.setFont('helvetica', 'normal');
+    doc.text('Référence', marginX, y);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`#${String(reparation._id).slice(-8).toUpperCase()}`, marginX + 20, y);
+
+    // Table header
+    // Extra space between meta section and table
+    y += 12;
+    const tableStartY = y;
+
+    const colDescW = (pageWidth - 2 * marginX) * 0.6;
+    const colQtyW = (pageWidth - 2 * marginX) * 0.1;
+    const colRateW = (pageWidth - 2 * marginX) * 0.15;
+    const colAmtW = (pageWidth - 2 * marginX) * 0.15;
+
+    doc.setFillColor(241, 245, 249); // #f1f5f9
+    doc.rect(marginX, y - 5, pageWidth - 2 * marginX, 8, 'F');
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(51, 65, 85); // #334155
+
+    let x = marginX + 2;
+    doc.text("DÉTAIL DE L'ARTICLE", x, y);
+    x = marginX + colDescW + colQtyW / 2;
+    doc.text('QTY', x, y, { align: 'center' });
+    x = marginX + colDescW + colQtyW + colRateW / 2;
+    doc.text('TAUX', x, y, { align: 'center' });
+    x = marginX + colDescW + colQtyW + colRateW + colAmtW / 2;
+    doc.text('MONTANT', x, y, { align: 'center' });
+
+    // Table rows (services then items)
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(15, 23, 42);
+    y += 6;
+
+    const drawRow = (title, sub, qty, rate, amount) => {
+        const lineHeight = 5;
+        const startY = y;
+
+        // Description cell
+        let tx = marginX + 2;
+        doc.setFont('helvetica', 'bold');
+        doc.text(title, tx, y);
+        if (sub) {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(100, 116, 139); // muted
+            doc.text(sub, tx, y + lineHeight);
+            doc.setFontSize(9);
+            doc.setTextColor(15, 23, 42);
+        }
+
+        // Qty / rate / amount
+        const centerQtyX = marginX + colDescW + colQtyW / 2;
+        const centerRateX = marginX + colDescW + colQtyW + colRateW / 2;
+        const centerAmtX = marginX + colDescW + colQtyW + colRateW + colAmtW / 2;
+
+        doc.setFont('helvetica', 'normal');
+        doc.text(String(qty), centerQtyX, startY, { align: 'center' });
+        doc.text(formatMAD(rate), centerRateX, startY, { align: 'center' });
+        doc.text(formatMAD(amount), centerAmtX, startY, { align: 'center' });
+
+        // Row separator
+        y = startY + (sub ? lineHeight + 3 : lineHeight + 1);
+        doc.setDrawColor(226, 232, 240); // #e2e8f0
+        doc.line(marginX, y, pageWidth - marginX, y);
+        y += 2;
+    };
+
+    services.forEach((s) => {
+        drawRow(s.name, s.notes || '', 1, s.price, s.price);
+    });
+
+    items.forEach((it) => {
+        drawRow(it.name, it.description || '', it.quantity, it.rate, it.total);
+    });
+
+    // Totals box on the right
+    const totalsBoxW = 80;
+    const totalsX = pageWidth - marginX - totalsBoxW;
+    const totalsY = y + 6;
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Sous-total', totalsX, totalsY);
+    doc.text(formatMAD(totals.subtotal), totalsX + totalsBoxW, totalsY, { align: 'right' });
+    doc.text("Main d'œuvre", totalsX, totalsY + 5);
+    doc.text(formatMAD(totals.labor), totalsX + totalsBoxW, totalsY + 5, { align: 'right' });
+    doc.setDrawColor(226, 232, 240);
+    doc.line(totalsX, totalsY + 7, totalsX + totalsBoxW, totalsY + 7);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Total', totalsX, totalsY + 12);
+    doc.text(formatMAD(totals.total), totalsX + totalsBoxW, totalsY + 12, { align: 'right' });
+
+    // Footer text always near bottom of page
+    const footerY = pageHeight - marginBottom;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Merci pour votre confiance.', marginX, footerY - 4);
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Conditions générales · Veuillez payer dès réception de cette facture.', marginX, footerY);
+
+    const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+    const filename = `Facture-${reparation.id}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(pdfBuffer);
 });
 
 module.exports = {
